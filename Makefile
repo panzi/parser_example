@@ -1,7 +1,15 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -std=gnu17 -O2 -g -D_GNU_SOURCE
-OBJS = build/buffer.o build/parser.o build/main.o build/bytecode.o
+CFLAGS = -Wall -Wextra -Werror -std=gnu17 -D_GNU_SOURCE
+RELEASE_FLAGS = -O2
+DEBUG_FLAGS = -g
+OBJS = build/buffer.o build/parser.o build/main.o build/bytecode.o build/ast.o
 BIN = build/parser_example
+
+ifeq ($(RELEASE), ON)
+	CFLAGS += $(RELEASE_FLAGS)
+else
+	CFLAGS += $(DEBUG_FLAGS)
+endif
 
 .PHONY: all clean
 

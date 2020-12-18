@@ -14,6 +14,7 @@ static bool parse_token(struct Parser *parser);
 
 static bool parser_peek_token(struct Parser *parser);
 static bool parser_consume_token(struct Parser *parser);
+static bool parser_append_node(struct Parser *parser, const struct AstNode *node);
 
 static bool parse_expr(struct Parser *parser);
 static bool parse_add_sub(struct Parser *parser, struct AstNode *node);
@@ -131,16 +132,16 @@ bool parse_token(struct Parser *parser) {
                 }
 
                 const size_t namelen = parser->index - parser->token.index;
-                size_t name_offset = parser->buffer.used;
+                size_t name_offset = parser->ast.buffer.used;
 
-                if (!buffer_append(&parser->buffer, parser->code + parser->token.index, namelen)) {
+                if (!buffer_append(&parser->ast.buffer, parser->code + parser->token.index, namelen)) {
                     parser->state = PARSER_ERROR;
                     parser->error = ERROR_OUT_OF_MEMORY;
                     parser->error_index = parser->token.index;
                     return false;
                 }
 
-                if (!buffer_append_byte(&parser->buffer, 0)) {
+                if (!buffer_append_byte(&parser->ast.buffer, 0)) {
                     parser->state = PARSER_ERROR;
                     parser->error = ERROR_OUT_OF_MEMORY;
                     parser->error_index = parser->token.index;
@@ -149,11 +150,11 @@ bool parse_token(struct Parser *parser) {
 
                 // de-duplicate symbols
                 // This is an inefficient linear search, but we can't simply reorder (sort) the strings
-                const char *name = parser->buffer.data + name_offset;
+                const char *name = parser->ast.buffer.data + name_offset;
                 for (size_t other_offset = 0; other_offset < name_offset; ) {
-                    const char *othername = parser->buffer.data + other_offset;
+                    const char *othername = parser->ast.buffer.data + other_offset;
                     if (strcmp(othername, name) == 0) {
-                        parser->buffer.used = name_offset;
+                        parser->ast.buffer.used = name_offset;
                         name_offset = other_offset;
                         break;
                     }
@@ -191,10 +192,7 @@ struct Parser parser_create_from_slice(const char *code, size_t code_size) {
         .token = {
             .type = TOK_EOF,
         },
-        .nodes = NULL,
-        .nodes_used = 0,
-        .nodes_capacity = 0,
-        .buffer = BUFFER_INIT,
+        .ast = AST_INIT,
     };
 
     if (!parse_expr(&parser)) {
@@ -249,33 +247,13 @@ bool parser_consume_token(struct Parser *parser) {
     }
 }
 
-static bool parser_append_node(struct Parser *parser, const struct AstNode *node) {
-    if (parser->nodes_used == parser->nodes_capacity) {
-        if (parser->nodes_capacity > SIZE_MAX / 2 / sizeof(struct AstNode)) {
-            parser->state = PARSER_ERROR;
-            parser->error = ERROR_OUT_OF_MEMORY;
-            parser->error_index = node->code_index;
-            return false;
-        }
-
-        const size_t new_capacity = parser->nodes_capacity == 0 ?
-            64 :
-            parser->nodes_capacity * 2;
-        struct AstNode *new_nodes = realloc(parser->nodes, new_capacity * sizeof(struct AstNode));
-
-        if (new_nodes == NULL) {
-            parser->state = PARSER_ERROR;
-            parser->error = ERROR_OUT_OF_MEMORY;
-            parser->error_index = node->code_index;
-            return false;
-        }
-
-        parser->nodes = new_nodes;
-        parser->nodes_capacity = new_capacity;
+bool parser_append_node(struct Parser *parser, const struct AstNode *node) {
+    if (!ast_append_node(&parser->ast, node)) {
+        parser->state = PARSER_ERROR;
+        parser->error = ERROR_OUT_OF_MEMORY;
+        parser->error_index = node->code_index;
+        return false;
     }
-
-    parser->nodes[parser->nodes_used] = *node;
-    ++ parser->nodes_used;
 
     return true;
 }
@@ -288,8 +266,6 @@ bool parse_expr(struct Parser *parser) {
 
     return parser_append_node(parser, &node);
 }
-
-#define LAST_NODE_INDEX(PARSER) ((PARSER)->nodes_used - 1)
 
 bool parse_add_sub(struct Parser *parser, struct AstNode *node) {
     if (!parse_mul_div(parser, node)) {
@@ -312,7 +288,7 @@ bool parse_add_sub(struct Parser *parser, struct AstNode *node) {
             return false;
         }
 
-        const size_t left_index = LAST_NODE_INDEX(parser);
+        const size_t left_index = AST_LAST_NODE_INDEX(&parser->ast);
         struct AstNode right;
 
         if (!parse_mul_div(parser, &right)) {
@@ -328,22 +304,22 @@ bool parse_add_sub(struct Parser *parser, struct AstNode *node) {
                     node->value + right.value :
                     node->value - right.value
             };
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else if (node->type == NODE_INT && node->value == 0) {
             // constant folding
             *node = right;
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else if (right.type == NODE_INT && right.value == 0) {
             // constant folding
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else {
             if (!parser_append_node(parser, &right)) {
                 return false;
             }
-            const size_t right_index = LAST_NODE_INDEX(parser);
+            const size_t right_index = AST_LAST_NODE_INDEX(&parser->ast);
 
             *node = (struct AstNode) {
                 .type = (enum NodeType) token_type,
@@ -380,7 +356,7 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
             return false;
         }
 
-        const size_t left_index = LAST_NODE_INDEX(parser);
+        const size_t left_index = AST_LAST_NODE_INDEX(&parser->ast);
         struct AstNode right;
 
         if (!parse_signed(parser, &right)) {
@@ -403,17 +379,17 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
                     node->value * right.value :
                     node->value / right.value,
             };
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else if (node->type == NODE_INT && node->value == 1) {
             // constant folding
             *node = right;
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else if (right.type == NODE_INT && right.value == 1) {
             // constant folding
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else if (right.type == NODE_INT && token_type == TOK_MUL && right.value == 0) {
             // constant folding
             *node = (struct AstNode) {
@@ -421,8 +397,8 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
                 .code_index = code_index,
                 .value = node->value,
             };
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else if (node->type == NODE_INT && token_type == TOK_MUL && node->value == 0) {
             // constant folding
             *node = (struct AstNode) {
@@ -430,8 +406,8 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
                 .code_index = code_index,
                 .value = right.value,
             };
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else if (node->type == NODE_INT && token_type == TOK_DIV && node->value == 0) {
             // constant folding
             *node = (struct AstNode) {
@@ -439,13 +415,13 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
                 .code_index = code_index,
                 .value = 0,
             };
-            assert(parser->nodes_used > 0);
-            -- parser->nodes_used;
+            assert(parser->ast.nodes_used > 0);
+            -- parser->ast.nodes_used;
         } else {
             if (!parser_append_node(parser, &right)) {
                 return false;
             }
-            const size_t right_index = LAST_NODE_INDEX(parser);
+            const size_t right_index = AST_LAST_NODE_INDEX(&parser->ast);
 
             *node = (struct AstNode) {
                 .type = (enum NodeType) token_type,
@@ -519,7 +495,7 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
         *node = (struct AstNode) {
             .type        = NODE_INV,
             .code_index  = code_index,
-            .child_index = LAST_NODE_INDEX(parser),
+            .child_index = AST_LAST_NODE_INDEX(&parser->ast),
         };
 
         return true;
@@ -611,87 +587,10 @@ void parser_destroy(struct Parser *parser) {
     parser->code_size = 0;
     parser->index = 0;
 
-    free(parser->nodes);
-    parser->nodes = NULL;
-    parser->nodes_capacity = 0;
-    parser->nodes_used = 0;
-
-    buffer_destroy(&parser->buffer);
+    ast_destroy(&parser->ast);
 }
 
-static long node_eval(const struct Parser *parser, size_t node_index) {
-    struct AstNode *node = &parser->nodes[node_index];
-    switch (node->type) {
-        case NODE_ADD:
-        {
-            const long left  = node_eval(parser, node->binary.left_index);
-            const long right = node_eval(parser, node->binary.right_index);
-            return left + right;
-        }
-
-        case NODE_SUB:
-        {
-            const long left  = node_eval(parser, node->binary.left_index);
-            const long right = node_eval(parser, node->binary.right_index);
-            return left - right;
-        }
-
-        case NODE_MUL:
-        {
-            const long left  = node_eval(parser, node->binary.left_index);
-            const long right = node_eval(parser, node->binary.right_index);
-            return left * right;
-        }
-
-        case NODE_DIV:
-        {
-            const long left  = node_eval(parser, node->binary.left_index);
-            const long right = node_eval(parser, node->binary.right_index);
-            return left / right;
-        }
-
-        case NODE_INV:
-        {
-            const long value = node_eval(parser, node->child_index);
-            return -value;
-        }
-
-        case NODE_INT:
-            return node->value;
-
-        case NODE_VAR:
-        {
-            const char *name = parser->buffer.data + node->name_offset;
-            const char *strvalue = getenv(name);
-            if (strvalue == NULL) {
-                fprintf(stderr, "WARNING: Environment variable %s is not set!\n", name);
-                return 0;
-            }
-
-            char *endptr = NULL;
-            const long value = strtol(strvalue, &endptr, 10);
-
-            if (!*strvalue || *endptr) {
-                fprintf(stderr, "WARNING: Error parsing environment variable %s=%s\n", name, strvalue);
-            }
-
-            return value;
-        }
-
-        default:
-            assert(false);
-            return 0;
-    }
-}
-
-long parser_eval_ast(const struct Parser *parser) {
-    if (parser->nodes_used == 0) {
-        return 0;
-    }
-    return node_eval(parser, LAST_NODE_INDEX(parser));
-}
-
-const char *parser_error_message(enum ParserError error) {
+const char *get_error_message(enum ParserError error) {
     switch (error) {
         case ERROR_NONE:               return "no error";
         case ERROR_ILLEGAL_CHARACTER:  return "illegal character";
@@ -722,7 +621,7 @@ void parser_print_error(const struct Parser *parser, FILE *stream) {
 
     fprintf(stream, "Error in line %zu in column %zu: %s",
         loc.lineno, loc.column,
-        parser_error_message(parser->error));
+        get_error_message(parser->error));
 
     if (parser->error == ERROR_ILLEGAL_TOKEN) {
         fprintf(stream, " %s", get_token_name(parser->token.type));
@@ -750,69 +649,6 @@ void parser_print_error(const struct Parser *parser, FILE *stream) {
         fputc('-', stream);
     }
     fprintf(stream, "^\n");
-}
-
-static void node_print(const struct Parser *parser, size_t node_index, FILE *stream) {
-    struct AstNode *node = &parser->nodes[node_index];
-    switch (node->type) {
-        case NODE_ADD:
-            fputc('(', stream);
-            node_print(parser, node->binary.left_index, stream);
-            fprintf(stream, " + ");
-            node_print(parser, node->binary.right_index, stream);
-            fputc(')', stream);
-            return;
-
-        case NODE_SUB:
-            fputc('(', stream);
-            node_print(parser, node->binary.left_index, stream);
-            fprintf(stream, " - ");
-            node_print(parser, node->binary.right_index, stream);
-            fputc(')', stream);
-            return;
-
-        case NODE_MUL:
-            fputc('(', stream);
-            node_print(parser, node->binary.left_index, stream);
-            fprintf(stream, " * ");
-            node_print(parser, node->binary.right_index, stream);
-            fputc(')', stream);
-            return;
-
-        case NODE_DIV:
-            fputc('(', stream);
-            node_print(parser, node->binary.left_index, stream);
-            fprintf(stream, " / ");
-            node_print(parser, node->binary.right_index, stream);
-            fputc(')', stream);
-            return;
-
-        case NODE_INV:
-        {
-            fputc('-', stream);
-            node_print(parser, node->child_index, stream);
-            return;
-        }
-
-        case NODE_INT:
-            fprintf(stream, "%ld", node->value);
-            return;
-
-        case NODE_VAR:
-            fprintf(stream, "%s", parser->buffer.data + node->name_offset);
-            return;
-
-        default:
-            fprintf(stderr, "illegal node type: %d %c\n", node->type, node->type);
-            assert(false);
-    }
-}
-
-void parser_print_ast(const struct Parser *parser, FILE *stream) {
-    if (parser->nodes_used == 0) {
-        return;
-    }
-    node_print(parser, LAST_NODE_INDEX(parser), stream);
 }
 
 const char *get_token_name(enum TokenType token_type) {

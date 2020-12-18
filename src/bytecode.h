@@ -16,7 +16,7 @@ struct Bytecode {
     size_t stack_size;
 };
 
-struct Bytecode bytecode_compile(const struct Parser *parser);
+struct Bytecode bytecode_compile(const struct Ast *ast);
 void bytecode_destroy(struct Bytecode *bytecode);
 
 long bytecode_eval(const void *bytecode);

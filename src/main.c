@@ -20,12 +20,12 @@ int main(int argc, char *argv[]) {
             parser_print_error(&parser, stderr);
         } else {
             printf("# AST: ");
-            parser_print_ast(&parser, stdout);
-            long value = parser_eval_ast(&parser);
+            ast_print(&parser.ast, stdout);
+            long value = ast_eval(&parser.ast);
             printf(" = %ld\n\n", value);
 
             printf("# Byte Code:\n\n");
-            struct Bytecode bytecode = bytecode_compile(&parser);
+            struct Bytecode bytecode = bytecode_compile(&parser.ast);
             if (bytecode.stack_size == 0) {
                 fprintf(stderr, "Error\n"); // TODO: better error messages
             } else {

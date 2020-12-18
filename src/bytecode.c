@@ -24,16 +24,16 @@ enum ByteCode {
     CODE_RET,
 };
 
-bool node_compile(struct Bytecode *bytecode, const struct Parser *parser, size_t node_index, size_t stack_size) {
-    const struct AstNode *node = &parser->nodes[node_index];
+bool node_compile(struct Bytecode *bytecode, const struct Ast *ast, size_t node_index, size_t stack_size) {
+    const struct AstNode *node = &ast->nodes[node_index];
     const size_t result_stack_size = stack_size + 1;
 
     switch (node->type) {
         case NODE_ADD:
-            if (!node_compile(bytecode, parser, node->binary.left_index, stack_size)) {
+            if (!node_compile(bytecode, ast, node->binary.left_index, stack_size)) {
                 return false;
             }
-            if (!node_compile(bytecode, parser, node->binary.right_index, result_stack_size)) {
+            if (!node_compile(bytecode, ast, node->binary.right_index, result_stack_size)) {
                 return false;
             }
             if (!bytecode_write_int(&bytecode->bytes, CODE_ADD)) {
@@ -42,10 +42,10 @@ bool node_compile(struct Bytecode *bytecode, const struct Parser *parser, size_t
             break;
 
         case NODE_SUB:
-            if (!node_compile(bytecode, parser, node->binary.left_index, stack_size)) {
+            if (!node_compile(bytecode, ast, node->binary.left_index, stack_size)) {
                 return false;
             }
-            if (!node_compile(bytecode, parser, node->binary.right_index, result_stack_size)) {
+            if (!node_compile(bytecode, ast, node->binary.right_index, result_stack_size)) {
                 return false;
             }
             if (!bytecode_write_int(&bytecode->bytes, CODE_SUB)) {
@@ -54,10 +54,10 @@ bool node_compile(struct Bytecode *bytecode, const struct Parser *parser, size_t
             break;
 
         case NODE_MUL:
-            if (!node_compile(bytecode, parser, node->binary.left_index, stack_size)) {
+            if (!node_compile(bytecode, ast, node->binary.left_index, stack_size)) {
                 return false;
             }
-            if (!node_compile(bytecode, parser, node->binary.right_index, result_stack_size)) {
+            if (!node_compile(bytecode, ast, node->binary.right_index, result_stack_size)) {
                 return false;
             }
             if (!bytecode_write_int(&bytecode->bytes, CODE_MUL)) {
@@ -66,10 +66,10 @@ bool node_compile(struct Bytecode *bytecode, const struct Parser *parser, size_t
             break;
 
         case NODE_DIV:
-            if (!node_compile(bytecode, parser, node->binary.left_index, stack_size)) {
+            if (!node_compile(bytecode, ast, node->binary.left_index, stack_size)) {
                 return false;
             }
-            if (!node_compile(bytecode, parser, node->binary.right_index, result_stack_size)) {
+            if (!node_compile(bytecode, ast, node->binary.right_index, result_stack_size)) {
                 return false;
             }
             if (!bytecode_write_int(&bytecode->bytes, CODE_DIV)) {
@@ -78,7 +78,7 @@ bool node_compile(struct Bytecode *bytecode, const struct Parser *parser, size_t
             break;
 
         case NODE_INV:
-            if (!node_compile(bytecode, parser, node->child_index, stack_size)) {
+            if (!node_compile(bytecode, ast, node->child_index, stack_size)) {
                 return false;
             }
             if (!bytecode_write_int(&bytecode->bytes, CODE_INV)) {
@@ -116,11 +116,11 @@ bool node_compile(struct Bytecode *bytecode, const struct Parser *parser, size_t
     return true;
 }
 
-struct Bytecode bytecode_compile(const struct Parser *parser) {
+struct Bytecode bytecode_compile(const struct Ast *ast) {
     struct Bytecode bytecode = { .bytes = BUFFER_INIT, .stack_size = 0 };
 
     // ensure alignment to sizeof(long)
-    size_t offset = parser->buffer.used + sizeof(size_t) * 2;
+    size_t offset = ast->buffer.used + sizeof(size_t) * 2;
     size_t rem = offset % sizeof(long);
     if (rem > 0) {
         offset += sizeof(long) - rem;
@@ -137,7 +137,7 @@ struct Bytecode bytecode_compile(const struct Parser *parser) {
     }
 
     // write string table
-    if (!buffer_append(&bytecode.bytes, parser->buffer.data, parser->buffer.used)) {
+    if (!buffer_append(&bytecode.bytes, ast->buffer.data, ast->buffer.used)) {
         goto error;
     }
 
@@ -149,7 +149,7 @@ struct Bytecode bytecode_compile(const struct Parser *parser) {
     }
 
     // generate bytecode
-    if (!node_compile(&bytecode, parser, parser->nodes_used - 1, 0)) {
+    if (!node_compile(&bytecode, ast, AST_LAST_NODE_INDEX(ast), 0)) {
         goto error;
     }
 
