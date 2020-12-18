@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "optimizer.h"
 #include "bytecode.h"
 
 #include <stdio.h>
@@ -64,19 +65,30 @@ int main(int argc, char *argv[]) {
     }
     printf(") -> %s\n\n", code);
 
-    printf("# AST: ");
+    long value;
+    printf("AST\n");
+    printf("---\n");
+
+    printf("Parsed AST: ");
     ast_print(&parser.ast, &argv[1], stdout);
-    long value = ast_eval(&parser.ast, args);
+    value = ast_eval(&parser.ast, args);
+    printf(" = %ld\n", value);
+
+    printf("Optimized AST: ");
+    optimize(&parser.ast);
+    ast_print(&parser.ast, &argv[1], stdout);
+    value = ast_eval(&parser.ast, args);
     printf(" = %ld\n\n", value);
 
-    printf("# Byte Code:\n\n");
+    printf("Byte Code\n");
+    printf("---------\n");
     struct Bytecode bytecode = bytecode_compile(&parser.ast);
     if (bytecode.stack_size == 0) {
         fprintf(stderr, "Error\n"); // TODO: better error messages
     } else {
         bytecode_print(bytecode.bytes.data, &argv[1], stdout);
         value = bytecode_eval(bytecode.bytes.data, args);
-        printf("-> %ld\n", value);
+        printf("\nresult = %ld\n", value);
     }
 
     bytecode_destroy(&bytecode);

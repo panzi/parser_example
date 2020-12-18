@@ -4,8 +4,24 @@ Parser Example
 Example demonstrating a very simple parser, with minimal optimizations, an AST
 interpretor, byte code generator, and byte code interpretor.
 
+This uses a recursive descend parser. This kind of parser is not the fastest,
+but it is the clearest to understand.
+
+```BNF
+EXPR    ::= ADD_SUB
+ADD_SUB ::= MUL_DIV (( "+" | "-" ) MUL_DIV)*
+MUL_DIV ::= SIGNED (( "*" | "/" ) SIGNED)*
+SIGNED  ::= ("+" | "-")* ATOM
+ATOM    ::= IDENT | INT | PAREN
+PAREN   ::= "(" EXPR ")"
+INT     ::= [0-9]+
+IDENT   ::= [_a-zA-Z][_a-zA-Z0-9]*
+
+COMMENT ::= #.*$
+```
+
 **TODO:** Better optimizations and x86_64 compiler. Maybe separate exising
-optimizations out of the parser.
+optimizations out of the parser. Maybe write a different faster parser.
 
 MIT License
 -----------

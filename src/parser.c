@@ -311,41 +311,19 @@ bool parse_add_sub(struct Parser *parser, struct AstNode *node) {
             return false;
         }
 
-        if (node->type == NODE_INT && right.type == NODE_INT) {
-            // constant folding
-            *node = (struct AstNode) {
-                .type = NODE_INT,
-                .code_index = code_index,
-                .value = token_type == TOK_PLUS ?
-                    node->value + right.value :
-                    node->value - right.value
-            };
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else if (node->type == NODE_INT && node->value == 0) {
-            // constant folding
-            *node = right;
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else if (right.type == NODE_INT && right.value == 0) {
-            // constant folding
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else {
-            if (!parser_append_node(parser, &right)) {
-                return false;
-            }
-            const size_t right_index = AST_ROOT_NODE_INDEX(&parser->ast);
-
-            *node = (struct AstNode) {
-                .type = (enum NodeType) token_type,
-                .code_index = code_index,
-                .binary = {
-                    .left_index  = left_index,
-                    .right_index = right_index,
-                }
-            };
+        if (!parser_append_node(parser, &right)) {
+            return false;
         }
+        const size_t right_index = AST_ROOT_NODE_INDEX(&parser->ast);
+
+        *node = (struct AstNode) {
+            .type = (enum NodeType) token_type,
+            .code_index = code_index,
+            .binary = {
+                .left_index  = left_index,
+                .right_index = right_index,
+            }
+        };
     }
 
     return true;
@@ -386,68 +364,19 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
             return false;
         }
 
-        if (node->type == NODE_INT && right.type == NODE_INT) {
-            // constant folding
-            *node = (struct AstNode) {
-                .type = NODE_INT,
-                .code_index = code_index,
-                .value = token_type == TOK_MUL ?
-                    node->value * right.value :
-                    node->value / right.value,
-            };
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else if (node->type == NODE_INT && node->value == 1) {
-            // constant folding
-            *node = right;
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else if (right.type == NODE_INT && right.value == 1) {
-            // constant folding
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else if (right.type == NODE_INT && token_type == TOK_MUL && right.value == 0) {
-            // constant folding
-            *node = (struct AstNode) {
-                .type = NODE_INT,
-                .code_index = code_index,
-                .value = node->value,
-            };
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else if (node->type == NODE_INT && token_type == TOK_MUL && node->value == 0) {
-            // constant folding
-            *node = (struct AstNode) {
-                .type = NODE_INT,
-                .code_index = code_index,
-                .value = right.value,
-            };
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else if (node->type == NODE_INT && token_type == TOK_DIV && node->value == 0) {
-            // constant folding
-            *node = (struct AstNode) {
-                .type = NODE_INT,
-                .code_index = code_index,
-                .value = 0,
-            };
-            assert(parser->ast.nodes_used > 0);
-            -- parser->ast.nodes_used;
-        } else {
-            if (!parser_append_node(parser, &right)) {
-                return false;
-            }
-            const size_t right_index = AST_ROOT_NODE_INDEX(&parser->ast);
-
-            *node = (struct AstNode) {
-                .type = (enum NodeType) token_type,
-                .code_index = code_index,
-                .binary = {
-                    .left_index  = left_index,
-                    .right_index = right_index,
-                }
-            };
+        if (!parser_append_node(parser, &right)) {
+            return false;
         }
+        const size_t right_index = AST_ROOT_NODE_INDEX(&parser->ast);
+
+        *node = (struct AstNode) {
+            .type = (enum NodeType) token_type,
+            .code_index = code_index,
+            .binary = {
+                .left_index  = left_index,
+                .right_index = right_index,
+            }
+        };
     }
 
     return true;
@@ -463,6 +392,7 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
     const size_t code_index = parser->token.index;
 
     for (;;) {
+        // fold series of signs
         if (!parser_peek_token(parser)) {
             return false;
         }
@@ -488,7 +418,7 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
         }
 
         if (child.type == NODE_INT) {
-            // constant folding
+            // apply sign to integer
             if (child.value == LONG_MAX) {
                 parser->state = PARSER_ERROR;
                 parser->error = ERROR_VALUE_OUT_OF_RANGE;
@@ -516,7 +446,11 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
 
         return true;
     } else {
-        return parse_atom(parser, node);
+        if (!parse_atom(parser, node)) {
+            return false;
+        }
+        node->code_index = code_index;
+        return true;
     }
 }
 

@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=gnu17 -D_GNU_SOURCE
 RELEASE_FLAGS = -O2
 DEBUG_FLAGS = -g
-OBJS = build/buffer.o build/parser.o build/main.o build/bytecode.o build/ast.o
+OBJS = build/buffer.o build/parser.o build/main.o build/bytecode.o build/ast.o build/optimizer.o
 BIN = build/parser_example
 
 ifeq ($(RELEASE), ON)

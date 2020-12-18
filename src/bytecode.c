@@ -234,7 +234,7 @@ void bytecode_print(const void *bytecode, char *const *const args, FILE *stream)
     const size_t stack_size = sizeof(long) * *(const size_t*)bytecode;
     const void *codeptr = bytecode + sizeof(long);
 
-    fprintf(stdout, "stack size: %zu cells (%zu B)\n", stack_size / sizeof(long), stack_size);
+    fprintf(stdout, "stack size: %zu cells (%zu B)\n\n", stack_size / sizeof(long), stack_size);
 
     for (;;) {
         const long code = *(const long*)codeptr;
