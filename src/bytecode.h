@@ -19,8 +19,8 @@ struct Bytecode {
 struct Bytecode bytecode_compile(const struct Ast *ast);
 void bytecode_destroy(struct Bytecode *bytecode);
 
-long bytecode_eval(const void *bytecode);
-void bytecode_print(const void *bytecode, FILE *stream);
+long bytecode_eval(const void *bytecode, const long args[]);
+void bytecode_print(const void *bytecode, char *const *const args, FILE *stream);
 
 #ifdef __cplusplus
 }

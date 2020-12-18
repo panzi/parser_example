@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <limits.h>
 
 // This bytecode is endian dependant!
 bool bytecode_write_int(struct Buffer *buffer, long value) {
@@ -99,7 +100,7 @@ bool node_compile(struct Bytecode *bytecode, const struct Ast *ast, size_t node_
             if (!bytecode_write_int(&bytecode->bytes, CODE_VAR)) {
                 return false;
             }
-            if (!bytecode_write_size(&bytecode->bytes, node->name_offset + sizeof(size_t) * 2)) {
+            if (!bytecode_write_size(&bytecode->bytes, node->arg_index)) {
                 return false;
             }
             break;
@@ -119,37 +120,13 @@ bool node_compile(struct Bytecode *bytecode, const struct Ast *ast, size_t node_
 struct Bytecode bytecode_compile(const struct Ast *ast) {
     struct Bytecode bytecode = { .bytes = BUFFER_INIT, .stack_size = 0 };
 
-    // ensure alignment to sizeof(long)
-    size_t offset = ast->buffer.used + sizeof(size_t) * 2;
-    size_t rem = offset % sizeof(long);
-    if (rem > 0) {
-        offset += sizeof(long) - rem;
-    }
-
     // stack size placeholder
     if (!bytecode_write_size(&bytecode.bytes, 0)) {
         goto error;
     }
 
-    // write offset to code start
-    if (!bytecode_write_size(&bytecode.bytes, offset)) {
-        goto error;
-    }
-
-    // write string table
-    if (!buffer_append(&bytecode.bytes, ast->buffer.data, ast->buffer.used)) {
-        goto error;
-    }
-
-    // alignment padding
-    while (bytecode.bytes.used < offset) {
-        if (!buffer_append_byte(&bytecode.bytes, 0)) {
-            goto error;
-        }
-    }
-
     // generate bytecode
-    if (!node_compile(&bytecode, ast, AST_LAST_NODE_INDEX(ast), 0)) {
+    if (!node_compile(&bytecode, ast, AST_ROOT_NODE_INDEX(ast), 0)) {
         goto error;
     }
 
@@ -158,7 +135,7 @@ struct Bytecode bytecode_compile(const struct Ast *ast) {
     }
 
     // fill in stack size
-    memcpy(bytecode.bytes.data, &bytecode.stack_size, sizeof(bytecode.stack_size));
+    memcpy(bytecode.bytes.data, &bytecode.stack_size, sizeof(size_t));
 
     goto end;
 
@@ -171,11 +148,12 @@ end:
     return bytecode;
 }
 
-long bytecode_eval(const void *bytecode) {
+long bytecode_eval(const void *bytecode, const long args[]) {
     long *stack = malloc(sizeof(long) * *(const size_t*)bytecode);
     if (stack == NULL) {
-        // TODO: error handling
-        return 0;
+        // TODO: better error handling
+        perror("allocating varialbe stack");
+        return LONG_MAX;
     }
 
     // non-standard address from label for faster interpreter loop
@@ -191,7 +169,7 @@ long bytecode_eval(const void *bytecode) {
         [CODE_RET] = &&ret,
     };
 
-    const void *codeptr = (const uint8_t*)bytecode + ((const size_t*)bytecode)[1];
+    const void *codeptr = bytecode + sizeof(size_t);
     long *stackptr = stack;
 
     goto *table[*(const long*)codeptr];
@@ -234,20 +212,8 @@ val:
 
 var:
     codeptr += sizeof(long);
-    const char *name = bytecode + *(const size_t*)codeptr;
-    const char *strvalue = getenv(name);
-    long value = 0;
-    if (strvalue == NULL) {
-        fprintf(stderr, "WARNING: Environment variable %s is not set!\n", name);
-    } else {
-        char *endptr = NULL;
-        value = strtol(strvalue, &endptr, 10);
-
-        if (!*strvalue || *endptr) {
-            fprintf(stderr, "WARNING: Error parsing environment variable %s=%s\n", name, strvalue);
-        }
-    }
-    *stackptr = value;
+    const size_t arg_index = *(const size_t*)codeptr;
+    *stackptr = args[arg_index];
     ++ stackptr;
     codeptr += sizeof(size_t);
     goto *table[*(const long*)codeptr];
@@ -264,12 +230,12 @@ void bytecode_destroy(struct Bytecode *bytecode) {
     bytecode->stack_size = 0;
 }
 
-void bytecode_print(const void *bytecode, FILE *stream) {
+void bytecode_print(const void *bytecode, char *const *const args, FILE *stream) {
     const size_t stack_size = sizeof(long) * *(const size_t*)bytecode;
-    const void *codeptr = (const uint8_t*)bytecode + ((const size_t*)bytecode)[1];
+    const void *codeptr = bytecode + sizeof(long);
 
-    fprintf(stdout, "stack size: %zu\n", stack_size / sizeof(long));
-    
+    fprintf(stdout, "stack size: %zu cells (%zu B)\n", stack_size / sizeof(long), stack_size);
+
     for (;;) {
         const long code = *(const long*)codeptr;
         codeptr += sizeof(long);
@@ -302,9 +268,9 @@ void bytecode_print(const void *bytecode, FILE *stream) {
 
             case CODE_VAR:
             {
-                const char *name = (const char*)bytecode + *(const size_t*)codeptr;
+                const size_t arg_index = *(const size_t*)codeptr;
                 codeptr += sizeof(size_t);
-                fprintf(stream, "VAR %s\n", name);
+                fprintf(stream, "VAR %s\n", args[arg_index]);
                 break;
             }
 

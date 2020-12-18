@@ -19,6 +19,10 @@ struct Buffer buffer_create(size_t initial_capacity) {
     return buffer;
 }
 
+void buffer_clear(struct Buffer *buffer) {
+    buffer->used = 0;
+}
+
 bool buffer_append(struct Buffer *buffer, const char *data, size_t size) {
     if (buffer->used > SIZE_MAX - size) {
         errno = ENOMEM;

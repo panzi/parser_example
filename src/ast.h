@@ -5,8 +5,6 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-#include "buffer.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -34,7 +32,7 @@ struct AstNode {
 
         long value;
 
-        size_t name_offset;
+        size_t arg_index;
     };
 };
 
@@ -43,22 +41,18 @@ struct Ast {
     struct AstNode *nodes;
     size_t nodes_used;
     size_t nodes_capacity;
-
-    // string storage
-    struct Buffer buffer;
 };
 
 bool ast_append_node(struct Ast *ast, const struct AstNode *node);
-void ast_print(const struct Ast *ast, FILE *stream);
-long ast_eval(const struct Ast *ast);
+void ast_print(const struct Ast *ast, char *const *const args, FILE *stream);
+long ast_eval(const struct Ast *ast, const long args[]);
 void ast_destroy(struct Ast *ast);
 
-#define AST_LAST_NODE_INDEX(AST) ((AST)->nodes_used - 1)
+#define AST_ROOT_NODE_INDEX(AST) ((AST)->nodes_used - 1)
 #define AST_INIT { \
         .nodes = NULL, \
         .nodes_used = 0, \
         .nodes_capacity = 0, \
-        .buffer = BUFFER_INIT, \
     }
 
 #ifdef __cplusplus

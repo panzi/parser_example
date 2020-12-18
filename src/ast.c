@@ -4,66 +4,64 @@
 
 #include "ast.h"
 
-static void node_print(const struct Ast *ast, size_t node_index, FILE *stream);
-static long node_eval(const struct Ast *ast, size_t node_index);
+static void node_print(const struct Ast *ast, size_t node_index, char *const *const args, FILE *stream);
+static long node_eval(const struct Ast *ast, size_t node_index, const long args[]);
 
 void ast_destroy(struct Ast *ast) {
     free(ast->nodes);
     ast->nodes = NULL;
     ast->nodes_capacity = 0;
     ast->nodes_used = 0;
-
-    buffer_destroy(&ast->buffer);
 }
 
-long ast_eval(const struct Ast *ast) {
+long ast_eval(const struct Ast *ast, const long args[]) {
     if (ast->nodes_used == 0) {
         return 0;
     }
-    return node_eval(ast, AST_LAST_NODE_INDEX(ast));
+    return node_eval(ast, AST_ROOT_NODE_INDEX(ast), args);
 }
 
-void ast_print(const struct Ast *ast, FILE *stream) {
+void ast_print(const struct Ast *ast, char *const *const args, FILE *stream) {
     if (ast->nodes_used == 0) {
         return;
     }
-    node_print(ast, AST_LAST_NODE_INDEX(ast), stream);
+    node_print(ast, AST_ROOT_NODE_INDEX(ast), args, stream);
 }
 
-long node_eval(const struct Ast *ast, size_t node_index) {
+long node_eval(const struct Ast *ast, size_t node_index, const long args[]) {
     struct AstNode *node = &ast->nodes[node_index];
     switch (node->type) {
         case NODE_ADD:
         {
-            const long left  = node_eval(ast, node->binary.left_index);
-            const long right = node_eval(ast, node->binary.right_index);
+            const long left  = node_eval(ast, node->binary.left_index, args);
+            const long right = node_eval(ast, node->binary.right_index, args);
             return left + right;
         }
 
         case NODE_SUB:
         {
-            const long left  = node_eval(ast, node->binary.left_index);
-            const long right = node_eval(ast, node->binary.right_index);
+            const long left  = node_eval(ast, node->binary.left_index, args);
+            const long right = node_eval(ast, node->binary.right_index, args);
             return left - right;
         }
 
         case NODE_MUL:
         {
-            const long left  = node_eval(ast, node->binary.left_index);
-            const long right = node_eval(ast, node->binary.right_index);
+            const long left  = node_eval(ast, node->binary.left_index, args);
+            const long right = node_eval(ast, node->binary.right_index, args);
             return left * right;
         }
 
         case NODE_DIV:
         {
-            const long left  = node_eval(ast, node->binary.left_index);
-            const long right = node_eval(ast, node->binary.right_index);
+            const long left  = node_eval(ast, node->binary.left_index, args);
+            const long right = node_eval(ast, node->binary.right_index, args);
             return left / right;
         }
 
         case NODE_INV:
         {
-            const long value = node_eval(ast, node->child_index);
+            const long value = node_eval(ast, node->child_index, args);
             return -value;
         }
 
@@ -72,21 +70,7 @@ long node_eval(const struct Ast *ast, size_t node_index) {
 
         case NODE_VAR:
         {
-            const char *name = ast->buffer.data + node->name_offset;
-            const char *strvalue = getenv(name);
-            if (strvalue == NULL) {
-                fprintf(stderr, "WARNING: Environment variable %s is not set!\n", name);
-                return 0;
-            }
-
-            char *endptr = NULL;
-            const long value = strtol(strvalue, &endptr, 10);
-
-            if (!*strvalue || *endptr) {
-                fprintf(stderr, "WARNING: Error parsing environment variable %s=%s\n", name, strvalue);
-            }
-
-            return value;
+            return args[node->arg_index];
         }
 
         default:
@@ -95,45 +79,45 @@ long node_eval(const struct Ast *ast, size_t node_index) {
     }
 }
 
-void node_print(const struct Ast *ast, size_t node_index, FILE *stream) {
+void node_print(const struct Ast *ast, size_t node_index, char *const *const args, FILE *stream) {
     struct AstNode *node = &ast->nodes[node_index];
     switch (node->type) {
         case NODE_ADD:
             fputc('(', stream);
-            node_print(ast, node->binary.left_index, stream);
+            node_print(ast, node->binary.left_index, args, stream);
             fprintf(stream, " + ");
-            node_print(ast, node->binary.right_index, stream);
+            node_print(ast, node->binary.right_index, args, stream);
             fputc(')', stream);
             return;
 
         case NODE_SUB:
             fputc('(', stream);
-            node_print(ast, node->binary.left_index, stream);
+            node_print(ast, node->binary.left_index, args, stream);
             fprintf(stream, " - ");
-            node_print(ast, node->binary.right_index, stream);
+            node_print(ast, node->binary.right_index, args, stream);
             fputc(')', stream);
             return;
 
         case NODE_MUL:
             fputc('(', stream);
-            node_print(ast, node->binary.left_index, stream);
+            node_print(ast, node->binary.left_index, args, stream);
             fprintf(stream, " * ");
-            node_print(ast, node->binary.right_index, stream);
+            node_print(ast, node->binary.right_index, args, stream);
             fputc(')', stream);
             return;
 
         case NODE_DIV:
             fputc('(', stream);
-            node_print(ast, node->binary.left_index, stream);
+            node_print(ast, node->binary.left_index, args, stream);
             fprintf(stream, " / ");
-            node_print(ast, node->binary.right_index, stream);
+            node_print(ast, node->binary.right_index, args, stream);
             fputc(')', stream);
             return;
 
         case NODE_INV:
         {
             fputc('-', stream);
-            node_print(ast, node->child_index, stream);
+            node_print(ast, node->child_index, args, stream);
             return;
         }
 
@@ -142,7 +126,7 @@ void node_print(const struct Ast *ast, size_t node_index, FILE *stream) {
             return;
 
         case NODE_VAR:
-            fprintf(stream, "%s", ast->buffer.data + node->name_offset);
+            fprintf(stream, "%s", args[node->arg_index]);
             return;
 
         default:

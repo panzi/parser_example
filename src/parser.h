@@ -45,8 +45,8 @@ struct Token {
     size_t index;
 
     union {
-        size_t name_offset;
-        long   value;
+        const char *name;
+        long value;
     };
 };
 
@@ -66,12 +66,20 @@ enum ParserError {
     ERROR_NONE,
     ERROR_ILLEGAL_CHARACTER,
     ERROR_ILLEGAL_TOKEN,
+    ERROR_ILLEGAL_ARG_NAME,
+    ERROR_DUPLICATED_ARG_NAME,
+    ERROR_UNDEFINED_VARIABLE,
     ERROR_OUT_OF_MEMORY,
     ERROR_VALUE_OUT_OF_RANGE,
     ERROR_DIV_BY_ZERO,
 };
 
+typedef const char * ParserStr;
+
 struct Parser {
+    char *const * args;
+    size_t argc;
+
     enum ParserState state;
     enum ParserError error;
     size_t error_index;
@@ -80,6 +88,7 @@ struct Parser {
     size_t code_size;
     size_t index;
 
+    struct Buffer buffer;
     struct Token token;
 
     struct Ast ast;
@@ -87,8 +96,8 @@ struct Parser {
 
 struct Location get_location(const char *code, size_t size, size_t index);
 
-struct Parser parser_create_from_slice(const char *code, size_t code_size);
-struct Parser parser_create_from_string(const char *code);
+struct Parser parse_slice(const char *code, size_t code_size, char *const *const args, size_t argc);
+struct Parser parse_string(const char *code, char *const *const args, size_t argc);
 
 void parser_print_error(const struct Parser *parser, FILE *stream);
 
@@ -96,6 +105,11 @@ const char *get_error_message(enum ParserError error);
 const char *get_token_name(enum TokenType token_type);
 
 void parser_destroy(struct Parser *parser);
+
+bool is_identifier(const char *str);
+
+#define IS_IDENT_HEAD(SYM) (((SYM) >= 'a' && (SYM) <= 'z') || ((SYM) >= 'A' && (SYM) <= 'Z') || (SYM) == '_')
+#define IS_IDENT_TAIL(SYM) (IS_IDENT_HEAD(SYM) || ((SYM) >= '0' && (SYM) <= '9'))
 
 #ifdef __cplusplus
 }

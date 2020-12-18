@@ -18,6 +18,7 @@ struct Buffer {
 #define BUFFER_INIT (struct Buffer){ .data = NULL, .used = 0, .capacity = 0 }
 
 struct Buffer buffer_create(size_t initial_capacity);
+void buffer_clear(struct Buffer *buffer);
 bool buffer_append(struct Buffer *buffer, const char *data, size_t size);
 bool buffer_append_byte(struct Buffer *buffer, char byte);
 void buffer_destroy(struct Buffer *buffer);
