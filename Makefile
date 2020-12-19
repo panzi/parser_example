@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=gnu17 -D_GNU_SOURCE
-RELEASE_FLAGS = -O2
-DEBUG_FLAGS = -g
+RELEASE_FLAGS = -O2 -DNDEBUG
+DEBUG_FLAGS = -g -DDEBUG
 OBJS = build/buffer.o build/parser.o build/main.o build/bytecode.o build/ast.o build/optimizer.o
 BIN = build/parser_example
 

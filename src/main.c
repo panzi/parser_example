@@ -65,30 +65,34 @@ int main(int argc, char *argv[]) {
     }
     printf(") -> %s\n\n", code);
 
-    long value;
     printf("AST\n");
     printf("---\n");
 
     printf("Parsed AST: ");
     ast_print(&parser.ast, &argv[1], stdout);
-    value = ast_eval(&parser.ast, args);
-    printf(" = %ld\n", value);
+    const long value_ast = ast_eval(&parser.ast, args);
+    printf(" = %ld\n", value_ast);
 
     printf("Optimized AST: ");
     optimize(&parser.ast);
     ast_print(&parser.ast, &argv[1], stdout);
-    value = ast_eval(&parser.ast, args);
-    printf(" = %ld\n\n", value);
+    const long value_opt = ast_eval(&parser.ast, args);
+    printf(" = %ld\n\n", value_opt);
+
+    if (value_ast != value_opt) {
+        fprintf(stderr, "Error: optimized code gives a different result!\n\n");
+        status = 1;
+    }
 
     printf("Byte Code\n");
     printf("---------\n");
     struct Bytecode bytecode = bytecode_compile(&parser.ast);
     if (bytecode.stack_size == 0) {
-        fprintf(stderr, "Error\n"); // TODO: better error messages
+        fprintf(stderr, "Error (probably out of memory)\n"); // TODO: better error messages
     } else {
         bytecode_print(bytecode.bytes.data, &argv[1], stdout);
-        value = bytecode_eval(bytecode.bytes.data, args);
-        printf("\nresult = %ld\n", value);
+        const long value_bc = bytecode_eval(bytecode.bytes.data, args);
+        printf("\nresult = %ld\n", value_bc);
     }
 
     bytecode_destroy(&bytecode);
