@@ -26,6 +26,8 @@ enum ByteCode {
 };
 
 bool node_compile(struct Bytecode *bytecode, const struct Ast *ast, size_t node_index, size_t stack_size) {
+    assert(node_index < ast->nodes_used);
+
     const struct AstNode *node = &ast->nodes[node_index];
     const size_t result_stack_size = stack_size + 1;
 

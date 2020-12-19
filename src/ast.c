@@ -29,6 +29,8 @@ void ast_print(const struct Ast *ast, char *const *const args, FILE *stream) {
 }
 
 long node_eval(const struct Ast *ast, size_t node_index, const long args[]) {
+    assert(node_index < ast->nodes_used);
+
     struct AstNode *node = &ast->nodes[node_index];
     switch (node->type) {
         case NODE_ADD:
@@ -80,6 +82,8 @@ long node_eval(const struct Ast *ast, size_t node_index, const long args[]) {
 }
 
 void node_print(const struct Ast *ast, size_t node_index, char *const *const args, FILE *stream) {
+    assert(node_index < ast->nodes_used);
+
     struct AstNode *node = &ast->nodes[node_index];
     switch (node->type) {
         case NODE_ADD:

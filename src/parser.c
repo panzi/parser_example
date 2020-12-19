@@ -494,10 +494,10 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
             }
 
             *node = (struct AstNode) {
-                .type  = NODE_INT,
+                .type        = NODE_INT,
                 .start_index = start_index,
                 .end_index   = child.end_index,
-                .value = -child.value,
+                .value       = -child.value,
             };
             return true;
         }
