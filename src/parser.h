@@ -42,7 +42,8 @@ enum TokenType {
 
 struct Token {
     enum TokenType type;
-    size_t index;
+    size_t start_index;
+    size_t end_index;
 
     union {
         const char *name;
@@ -55,6 +56,11 @@ struct Location {
     size_t column;
 };
 
+struct Range {
+    size_t start_index;
+    size_t end_index;
+};
+
 enum ParserState {
     PARSER_TOKEN_PENDING,
     PARSER_TOKEN_READY,
@@ -64,17 +70,16 @@ enum ParserState {
 
 enum ParserError {
     ERROR_NONE,
-    ERROR_ILLEGAL_CHARACTER,
-    ERROR_ILLEGAL_TOKEN,
-    ERROR_ILLEGAL_ARG_NAME,
-    ERROR_DUPLICATED_ARG_NAME,
-    ERROR_UNDEFINED_VARIABLE,
-    ERROR_OUT_OF_MEMORY,
-    ERROR_VALUE_OUT_OF_RANGE,
-    ERROR_DIV_BY_ZERO,
+    ERROR_ILLEGAL_CHARACTER,    // raw location
+    ERROR_ILLEGAL_TOKEN,        // token
+    ERROR_EXPECTED_CLOSE_PAREN, // token
+    ERROR_ILLEGAL_ARG_NAME,     // args
+    ERROR_DUPLICATED_ARG_NAME,  // args
+    ERROR_UNDEFINED_VARIABLE,   // token
+    ERROR_OUT_OF_MEMORY,        // raw location
+    ERROR_VALUE_OUT_OF_RANGE,   // token or node -> raw location
+    ERROR_DIV_BY_ZERO,          // node
 };
-
-typedef const char * ParserStr;
 
 struct Parser {
     char *const * args;
@@ -82,7 +87,10 @@ struct Parser {
 
     enum ParserState state;
     enum ParserError error;
-    size_t error_index;
+    union {
+        size_t arg_index;
+        struct Range code;
+    } error_info;
 
     const char *code;
     size_t code_size;
@@ -95,6 +103,9 @@ struct Parser {
 };
 
 struct Location get_location(const char *code, size_t size, size_t index);
+struct Range get_line_range(const char *code, size_t size, size_t index);
+size_t get_line_start(const char *code, size_t size, size_t index);
+size_t get_line_end(const char *code, size_t size, size_t index);
 
 struct Parser parse_slice(const char *code, size_t code_size, char *const *const args, size_t argc);
 struct Parser parse_string(const char *code, char *const *const args, size_t argc);

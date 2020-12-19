@@ -21,7 +21,9 @@ enum NodeType {
 
 struct AstNode {
     enum NodeType type;
-    size_t code_index;
+    size_t start_index;
+    size_t end_index;
+
     union {
         struct {
             size_t left_index;

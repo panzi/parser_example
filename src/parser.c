@@ -70,13 +70,60 @@ struct Location get_location(const char *code, size_t size, size_t index) {
     return loc;
 }
 
+size_t get_line_start(const char *code, size_t size, size_t index) {
+    const char *startptr = index < size ?
+        memrchr(code, '\n', index + 1) :
+        memrchr(code, '\n', size);
+
+    return startptr == NULL ? 0 : startptr - code + 1;
+}
+
+size_t get_line_end(const char *code, size_t size, size_t index) {
+    if (index >= size) {
+        return size;
+    }
+    const char *endptr = memchr(code + index, '\n', size - index);
+    return endptr == NULL ? size : (size_t)(endptr - code);
+}
+
+static size_t get_number_length(size_t number) {
+    if (number == 0) {
+        return 1;
+    }
+    size_t length = 0;
+    while (number > 0) {
+        number /= 10;
+        ++ length;
+    }
+    return length;
+}
+
+struct Range get_line_range(const char *code, size_t size, size_t index) {
+    const char *startptr;
+    const char *endptr;
+
+    if (index < size) {
+        startptr = memrchr(code, '\n', index + 1);
+        endptr   = memchr(code + index, '\n', size - index);
+    } else {
+        startptr = memrchr(code, '\n', size);
+        endptr   = code + size;
+    }
+
+    return (struct Range) {
+        .start_index = startptr == NULL ?    0 : (size_t)(startptr - code + 1),
+        .end_index   = endptr   == NULL ? size : (size_t)(endptr - code),
+    };
+}
+
 bool parse_token(struct Parser *parser) {
     parser_skip_ignoreable(parser);
 
     if (parser->index >= parser->code_size) {
         parser->state = PARSER_TOKEN_READY;
         parser->token.type = TOK_EOF;
-        parser->token.index = parser->index;
+        parser->token.start_index = parser->code_size;
+        parser->token.end_index   = parser->code_size;
         return true;
     }
 
@@ -89,7 +136,8 @@ bool parse_token(struct Parser *parser) {
         case '/':
         case '(':
         case ')':
-            parser->token.index = parser->index;
+        parser->token.start_index = parser->index;
+        parser->token.end_index   = parser->index + 1;
             parser->state = PARSER_TOKEN_READY;
             parser->token.type = (enum TokenType) sym;
             ++ parser->index;
@@ -97,7 +145,7 @@ bool parse_token(struct Parser *parser) {
 
         default:
             if (sym >= '0' && sym <= '9') {
-                parser->token.index = parser->index;
+                parser->token.start_index = parser->index;
                 long value = 0;
 
                 while (parser->index < parser->code_size) {
@@ -112,7 +160,8 @@ bool parse_token(struct Parser *parser) {
                     if (value > (LONG_MAX - digit) / 10) {
                         parser->state = PARSER_ERROR;
                         parser->error = ERROR_VALUE_OUT_OF_RANGE;
-                        parser->error_index = parser->token.index;
+                        parser->error_info.code.start_index = parser->token.start_index;
+                        parser->error_info.code.end_index   = parser->index;
                         return false;
                     }
 
@@ -122,12 +171,13 @@ bool parse_token(struct Parser *parser) {
                     ++ parser->index;
                 }
                 parser->state = PARSER_TOKEN_READY;
+                parser->token.end_index = parser->index;
                 parser->token.type = TOK_INT;
                 parser->token.value = value;
 
                 return true;
             } else if (IS_IDENT_HEAD(sym)) {
-                parser->token.index = parser->index;
+                parser->token.start_index = parser->index;
 
                 while (parser->index < parser->code_size) {
                     sym = parser->code[parser->index];
@@ -139,21 +189,24 @@ bool parse_token(struct Parser *parser) {
                     ++ parser->index;
                 }
 
-                const size_t namelen = parser->index - parser->token.index;
+                parser->token.end_index = parser->index;
+                const size_t namelen = parser->index - parser->token.start_index;
 
                 buffer_clear(&parser->buffer);
 
-                if (!buffer_append(&parser->buffer, parser->code + parser->token.index, namelen)) {
+                if (!buffer_append(&parser->buffer, parser->code + parser->token.start_index, namelen)) {
                     parser->state = PARSER_ERROR;
                     parser->error = ERROR_OUT_OF_MEMORY;
-                    parser->error_index = parser->token.index;
+                    parser->error_info.code.start_index = parser->token.start_index;
+                    parser->error_info.code.end_index   = parser->token.end_index;
                     return false;
                 }
 
                 if (!buffer_append_byte(&parser->buffer, 0)) {
                     parser->state = PARSER_ERROR;
                     parser->error = ERROR_OUT_OF_MEMORY;
-                    parser->error_index = parser->token.index;
+                    parser->error_info.code.start_index = parser->token.start_index;
+                    parser->error_info.code.end_index   = parser->token.end_index;
                     return false;
                 }
 
@@ -165,7 +218,8 @@ bool parse_token(struct Parser *parser) {
             } else {
                 parser->state = PARSER_ERROR;
                 parser->error = ERROR_ILLEGAL_CHARACTER;
-                parser->error_index = parser->index;
+                parser->error_info.code.start_index = parser->index;
+                parser->error_info.code.end_index   = parser->index + 1;
 
                 return false;
             }
@@ -182,7 +236,12 @@ struct Parser parse_slice(const char *code, size_t code_size, char *const *const
         .argc = argc,
         .state = PARSER_TOKEN_PENDING,
         .error = ERROR_NONE,
-        .error_index = 0,
+        .error_info = {
+            .code = {
+                .start_index = 0,
+                .end_index   = 0,
+            }
+        },
         .code = code,
         .code_size = code_size,
         .index = 0,
@@ -197,7 +256,7 @@ struct Parser parse_slice(const char *code, size_t code_size, char *const *const
         if (!is_identifier(args[arg_index])) {
             parser.state = PARSER_ERROR;
             parser.error = ERROR_ILLEGAL_ARG_NAME;
-            parser.error_index = arg_index;
+            parser.error_info.arg_index = arg_index;
             return parser;
         }
 
@@ -205,7 +264,7 @@ struct Parser parse_slice(const char *code, size_t code_size, char *const *const
             if (strcmp(args[arg_index], args[other_index]) == 0) {
                 parser.state = PARSER_ERROR;
                 parser.error = ERROR_DUPLICATED_ARG_NAME;
-                parser.error_index = arg_index;
+                parser.error_info.arg_index = arg_index;
                 return parser;
             }
         }
@@ -222,7 +281,8 @@ struct Parser parse_slice(const char *code, size_t code_size, char *const *const
     if (parser.token.type != TOK_EOF) {
         parser.state = PARSER_ERROR;
         parser.error = ERROR_ILLEGAL_TOKEN;
-        parser.error_index = parser.token.index;
+        parser.error_info.code.start_index = parser.token.start_index;
+        parser.error_info.code.end_index   = parser.token.end_index;
         return parser;
     }
 
@@ -267,7 +327,8 @@ bool parser_append_node(struct Parser *parser, const struct AstNode *node) {
     if (!ast_append_node(&parser->ast, node)) {
         parser->state = PARSER_ERROR;
         parser->error = ERROR_OUT_OF_MEMORY;
-        parser->error_index = node->code_index;
+        parser->error_info.code.start_index = node->start_index;
+        parser->error_info.code.end_index   = node->end_index;
         return false;
     }
 
@@ -294,7 +355,8 @@ bool parse_add_sub(struct Parser *parser, struct AstNode *node) {
         }
 
         const enum TokenType token_type = parser->token.type;
-        const size_t code_index = parser->token.index;
+        const size_t start_index = parser->token.start_index;
+        const size_t end_index   = parser->token.end_index;
 
         if (token_type != TOK_PLUS && token_type != TOK_MINUS) {
             break;
@@ -318,7 +380,8 @@ bool parse_add_sub(struct Parser *parser, struct AstNode *node) {
 
         *node = (struct AstNode) {
             .type = (enum NodeType) token_type,
-            .code_index = code_index,
+            .start_index = start_index,
+            .end_index   = end_index,
             .binary = {
                 .left_index  = left_index,
                 .right_index = right_index,
@@ -340,7 +403,8 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
         }
 
         const enum TokenType token_type = parser->token.type;
-        const size_t code_index = parser->token.index;
+        const size_t start_index = parser->token.start_index;
+        const size_t end_index   = parser->token.end_index;
 
         if (token_type != TOK_MUL && token_type != TOK_DIV) {
             break;
@@ -360,7 +424,8 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
         if (token_type == TOK_DIV && right.type == NODE_INT && right.value == 0) {
             parser->state = PARSER_ERROR;
             parser->error = ERROR_DIV_BY_ZERO;
-            parser->error_index = right.code_index;
+            parser->error_info.code.start_index = right.start_index;
+            parser->error_info.code.end_index   = right.end_index;
             return false;
         }
 
@@ -371,7 +436,8 @@ bool parse_mul_div(struct Parser *parser, struct AstNode *node) {
 
         *node = (struct AstNode) {
             .type = (enum NodeType) token_type,
-            .code_index = code_index,
+            .start_index = start_index,
+            .end_index   = end_index,
             .binary = {
                 .left_index  = left_index,
                 .right_index = right_index,
@@ -389,7 +455,7 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
         return false;
     }
 
-    const size_t code_index = parser->token.index;
+    const size_t start_index = parser->token.start_index;
 
     for (;;) {
         // fold series of signs
@@ -422,13 +488,15 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
             if (child.value == LONG_MAX) {
                 parser->state = PARSER_ERROR;
                 parser->error = ERROR_VALUE_OUT_OF_RANGE;
-                parser->error_index = code_index;
+                parser->error_info.code.start_index = start_index;
+                parser->error_info.code.end_index   = child.end_index;
                 return false;
             }
 
             *node = (struct AstNode) {
                 .type  = NODE_INT,
-                .code_index = code_index,
+                .start_index = start_index,
+                .end_index   = child.end_index,
                 .value = -child.value,
             };
             return true;
@@ -440,7 +508,8 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
 
         *node = (struct AstNode) {
             .type        = NODE_INV,
-            .code_index  = code_index,
+            .start_index = start_index,
+            .end_index   = child.end_index,
             .child_index = AST_ROOT_NODE_INDEX(&parser->ast),
         };
 
@@ -449,7 +518,7 @@ bool parse_signed(struct Parser *parser, struct AstNode *node) {
         if (!parse_atom(parser, node)) {
             return false;
         }
-        node->code_index = code_index;
+        node->start_index = start_index;
         return true;
     }
 }
@@ -471,13 +540,15 @@ bool parse_atom(struct Parser *parser, struct AstNode *node) {
             if (arg_index == parser->argc) {
                 parser->state = PARSER_ERROR;
                 parser->error = ERROR_UNDEFINED_VARIABLE;
-                parser->error_index = parser->token.index;
+                parser->error_info.code.start_index = parser->token.start_index;
+                parser->error_info.code.end_index   = parser->token.end_index;
                 return false;
             }
 
             *node = (struct AstNode) {
                 .type        = NODE_VAR,
-                .code_index  = parser->token.index,
+                .start_index = parser->token.start_index,
+                .end_index   = parser->token.end_index,
                 .arg_index   = arg_index,
             };
             return true;
@@ -487,9 +558,10 @@ bool parse_atom(struct Parser *parser, struct AstNode *node) {
                 return false;
             }
             *node = (struct AstNode) {
-                .type       = NODE_INT,
-                .code_index = parser->token.index,
-                .value      = parser->token.value,
+                .type        = NODE_INT,
+                .start_index = parser->token.start_index,
+                .end_index   = parser->token.end_index,
+                .value       = parser->token.value,
             };
             return true;
 
@@ -499,7 +571,8 @@ bool parse_atom(struct Parser *parser, struct AstNode *node) {
         default:
             parser->state = PARSER_ERROR;
             parser->error = ERROR_ILLEGAL_TOKEN;
-            parser->error_index = parser->token.index;
+            parser->error_info.code.start_index = parser->token.start_index;
+            parser->error_info.code.end_index   = parser->token.end_index;
             return false;
     }
 }
@@ -512,9 +585,12 @@ bool parse_paren(struct Parser *parser, struct AstNode *node) {
     if (parser->token.type != TOK_PAREN_OPEN) {
         parser->state = PARSER_ERROR;
         parser->error = ERROR_ILLEGAL_TOKEN;
-        parser->error_index = parser->token.index;
+        parser->error_info.code.start_index = parser->token.start_index;
+        parser->error_info.code.end_index   = parser->token.end_index;
         return false;
     }
+
+    const size_t start_index = parser->token.start_index;
 
     if (!parser_consume_token(parser)) {
         return false;
@@ -526,8 +602,9 @@ bool parse_paren(struct Parser *parser, struct AstNode *node) {
 
     if (parser->token.type != TOK_PAREN_CLOSE) {
         parser->state = PARSER_ERROR;
-        parser->error = ERROR_ILLEGAL_TOKEN;
-        parser->error_index = parser->token.index;
+        parser->error = ERROR_EXPECTED_CLOSE_PAREN;
+        parser->error_info.code.start_index = start_index;
+        parser->error_info.code.end_index   = parser->token.end_index;
         return false;
     }
 
@@ -543,7 +620,8 @@ void parser_destroy(struct Parser *parser) {
     parser->argc  = 0;
     parser->state = PARSER_DONE;
     parser->error = ERROR_NONE;
-    parser->error_index = 0,
+    parser->error_info.code.start_index = 0;
+    parser->error_info.code.end_index   = 0;
     parser->code = NULL;
     parser->code_size = 0;
     parser->index = 0;
@@ -554,15 +632,16 @@ void parser_destroy(struct Parser *parser) {
 
 const char *get_error_message(enum ParserError error) {
     switch (error) {
-        case ERROR_NONE:                return "no error";
-        case ERROR_ILLEGAL_CHARACTER:   return "illegal character";
-        case ERROR_ILLEGAL_TOKEN:       return "illegal token";
-        case ERROR_ILLEGAL_ARG_NAME:    return "illegal argument name";
-        case ERROR_DUPLICATED_ARG_NAME: return "duplicated argument name";
-        case ERROR_UNDEFINED_VARIABLE:  return "undefined variable";
-        case ERROR_OUT_OF_MEMORY:       return "out of memory";
-        case ERROR_VALUE_OUT_OF_RANGE:  return "value out of range";
-        case ERROR_DIV_BY_ZERO:         return "division by zero";
+        case ERROR_NONE:                 return "no error";
+        case ERROR_ILLEGAL_CHARACTER:    return "illegal character";
+        case ERROR_ILLEGAL_TOKEN:        return "illegal token";
+        case ERROR_EXPECTED_CLOSE_PAREN: return "expected ')'";
+        case ERROR_ILLEGAL_ARG_NAME:     return "illegal argument name";
+        case ERROR_DUPLICATED_ARG_NAME:  return "duplicated argument name";
+        case ERROR_UNDEFINED_VARIABLE:   return "undefined variable";
+        case ERROR_OUT_OF_MEMORY:        return "out of memory";
+        case ERROR_VALUE_OUT_OF_RANGE:   return "value out of range";
+        case ERROR_DIV_BY_ZERO:          return "division by zero";
         default:
             assert(false);
             return "illegal error code";
@@ -579,52 +658,62 @@ void parser_print_error(const struct Parser *parser, FILE *stream) {
         case ERROR_DUPLICATED_ARG_NAME:
             fprintf(stream, "Error: %s: %s\n",
                 get_error_message(parser->error),
-                parser->args[parser->error_index]);
+                parser->args[parser->error_info.arg_index]);
             return;
 
         default:
             break;
     }
 
-    const size_t index = parser->error_index;
-    struct Location loc = get_location(parser->code, parser->code_size, index);
-    const char *lineptr = memrchr(parser->code, '\n', index + 1);
-    lineptr = lineptr == NULL ? parser->code : lineptr + 1;
-    const char *lineend = memchr(parser->code + index, '\n', parser->code_size - index);
-    if (lineend == NULL) {
-        lineend = parser->code + parser->code_size;
-    }
+    const size_t start_index = parser->error_info.code.start_index;
+    const size_t end_index   = parser->error_info.code.end_index;
+
+    const struct Location start_loc = get_location(parser->code, parser->code_size, start_index);
+    const struct Location end_loc   = get_location(parser->code, parser->code_size, end_index);
+    const size_t line_start = get_line_start(parser->code, parser->code_size, start_index);
 
     fprintf(stream, "Error in line %zu in column %zu: %s",
-        loc.lineno, loc.column,
+        start_loc.lineno, start_loc.column,
         get_error_message(parser->error));
 
     if (parser->error == ERROR_ILLEGAL_TOKEN) {
         fprintf(stream, " %s", get_token_name(parser->token.type));
+    } else if (parser->error == ERROR_EXPECTED_CLOSE_PAREN) {
+        fprintf(stream, ", but got %s", get_token_name(parser->token.type));
     }
+    fprintf(stream, "\n\n");
 
-    fprintf(stream, "\n\n %zu | ", loc.lineno);
-    fwrite(lineptr, lineend - lineptr, 1, stream);
+    const size_t padding_length = get_number_length(end_loc.lineno);
 
-    if (loc.lineno == 0) {
-        assert(false);
-        fprintf(stream, "\n  ");
-    } else {
+    size_t index = line_start;
+    for (size_t lineno = start_loc.lineno; lineno <= end_loc.lineno; ++ lineno) {
+        const size_t line_end = get_line_end(parser->code, parser->code_size, index);
+        fprintf(stream, " %*zu | ", (int)padding_length, lineno);
+        fwrite(parser->code + index, line_end - index, 1, stream);
         fprintf(stream, "\n ");
-
-        size_t pad = loc.lineno;
-        while (pad > 0) {
+        for (size_t pad = 0; pad < padding_length; ++ pad) {
             fputc(' ', stream);
-            pad /= 10;
         }
-    }
+        fprintf(stream, " | ");
 
-    fprintf(stream, " | ");
+        const size_t start_column = lineno == start_loc.lineno ? start_loc.column - 1 : 0;
+        const size_t end_column   = lineno == end_loc.lineno   ? end_loc.column - 1 : line_end;
 
-    for (size_t dash_count = loc.column - 1; dash_count > 0; -- dash_count) {
-        fputc('-', stream);
+        size_t cursor = 0;
+        for (; cursor < start_column; ++ cursor) {
+            fputc(' ', stream);
+        }
+        if (cursor == end_column) {
+            fputc('^', stream);
+        } else {
+            for (; cursor < end_column; ++ cursor) {
+                fputc('^', stream);
+            }
+        }
+        fputc('\n', stream);
+
+        index = line_end + 1;
     }
-    fprintf(stream, "^\n");
 }
 
 const char *get_token_name(enum TokenType token_type) {
