@@ -2,15 +2,16 @@
 
 #include <assert.h>
 
-static void node_optimize(struct Ast *ast, size_t node_index);
+static void node_optimize_recursive(struct Ast *ast, size_t node_index);
+static void node_optimize(struct Ast *ast, const size_t node_index);
 
 void optimize(struct Ast *ast) {
     size_t node_index = AST_ROOT_NODE_INDEX(ast);
-    node_optimize(ast, node_index);
+    node_optimize_recursive(ast, node_index);
 }
 
 // TODO: deeper optimizations
-void node_optimize(struct Ast *ast, const size_t node_index) {
+void node_optimize_recursive(struct Ast *ast, const size_t node_index) {
     struct AstNode *node = &ast->nodes[node_index];
 
     // first optimize sub-trees
@@ -19,18 +20,24 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
         case NODE_SUB:
         case NODE_MUL:
         case NODE_DIV:
-            node_optimize(ast, node->binary.left_index);
-            node_optimize(ast, node->binary.right_index);
+            node_optimize_recursive(ast, node->binary.left_index);
+            node_optimize_recursive(ast, node->binary.right_index);
             break;
 
         case NODE_INV:
-            node_optimize(ast, node->child_index);
+            node_optimize_recursive(ast, node->child_index);
             break;
 
         case NODE_INT:
         case NODE_VAR:
             break;
     }
+
+    node_optimize(ast, node_index);
+}
+
+void node_optimize(struct Ast *ast, const size_t node_index) {
+    struct AstNode *node = &ast->nodes[node_index];
 
     // A loop is needed because optimizations change the tree in a way that
     // might make another optimization to be applicable. However, we ensure
@@ -176,6 +183,57 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                             .right_index = right->binary.left_index,
                         }
                     };
+
+                    // Did enough to that branch so that we might need to optimize it
+                    // again, but not the full recursive way.
+                    node_optimize(ast, node->binary.left_index);
+
+                    continue;
+                } else if (right->type != NODE_INT &&
+                    (left->type == NODE_ADD || left->type == NODE_SUB) &&
+                    ((ast->nodes[left->binary.left_index].type == NODE_INT && left->type == NODE_ADD) ||
+                     ast->nodes[left->binary.right_index].type == NODE_INT
+                )) {
+                    const size_t right_index = node->binary.right_index;
+
+                    if (ast->nodes[left->binary.left_index].type == NODE_INT) {
+                        // (1 + X) +/- Y -> (X +/- Y) + 1
+
+                        *node = (struct AstNode) {
+                            .type = NODE_ADD,
+                            .binary = {
+                                .left_index  = node->binary.left_index,
+                                .right_index = left->binary.left_index,
+                            }
+                        };
+
+                        *left = (struct AstNode) {
+                            .type = type,
+                            .binary = {
+                                .left_index  = left->binary.right_index,
+                                .right_index = right_index,
+                            }
+                        };
+                    } else {
+                        // (X +/- 1) +/- Y -> (X +/- Y) +/- 1
+                        *node = (struct AstNode) {
+                            .type = left->type,
+                            .binary = {
+                                .left_index  = node->binary.left_index,
+                                .right_index = left->binary.right_index,
+                            }
+                        };
+
+                        *left = (struct AstNode) {
+                            .type = type,
+                            .binary = {
+                                .left_index  = left->binary.left_index,
+                                .right_index = right_index,
+                            }
+                        };
+                    }
+
+                    node_optimize(ast, node->binary.left_index);
 
                     continue;
                 }
