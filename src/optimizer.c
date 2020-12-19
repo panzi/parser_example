@@ -6,7 +6,7 @@ static void node_optimize_recursive(struct Ast *ast, size_t node_index);
 static void node_optimize(struct Ast *ast, const size_t node_index);
 
 void optimize(struct Ast *ast) {
-    size_t node_index = AST_ROOT_NODE_INDEX(ast);
+    const size_t node_index = AST_ROOT_NODE_INDEX(ast);
     node_optimize_recursive(ast, node_index);
 }
 
@@ -37,12 +37,21 @@ void node_optimize_recursive(struct Ast *ast, const size_t node_index) {
 }
 
 void node_optimize(struct Ast *ast, const size_t node_index) {
+    // NOTE: Some of the optimizations here reorder instructions. This might
+    //       cause calculations that didn't have interger overflows/underflows
+    //       in intermediate results to now have them. But I think this should
+    //       be fine, since in the actual result it will all cancel out with
+    //       the opposite overflow/underflow again.
+
+    // TODO: Change code_index of changed nodes to something sane.
+
     struct AstNode *node = &ast->nodes[node_index];
 
     // A loop is needed because optimizations change the tree in a way that
     // might make another optimization to be applicable. However, we ensure
     // that the sub-trees stay optimized so we don't have to do that recursive
-    // part again.
+    // part again. In a few cases we do change sub-trees enough to need to
+    // call node_optimize() on them again, though.
     for (;;) {
         const enum NodeType type = node->type;
 
@@ -56,23 +65,25 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                 if (left->type == NODE_INT && right->type == NODE_INT) {
                     *node = (struct AstNode) {
                         .type = NODE_INT,
+                        .code_index = node->code_index,
                         .value = type == NODE_ADD ?
                             left->value + right->value :
                             left->value - right->value,
                     };
                 } else if (left->type == NODE_INT && left->value == 0) {
-                    *node = *right;
-                } else if (right->type == NODE_INT && right->value == 0) {
                     if (type == NODE_ADD) {
-                        *node = *left;
+                        *node = *right;
                     } else {
                         *node = (struct AstNode) {
                             .type = NODE_INV,
-                            .child_index = node->binary.left_index,
+                            .code_index = node->code_index,
+                            .child_index = node->binary.right_index,
                         };
 
                         continue;
                     }
+                } else if (right->type == NODE_INT && right->value == 0) {
+                    *node = *left;
                 } else if (left->type == NODE_INT &&
                     (right->type == NODE_ADD || right->type == NODE_SUB) && (
                     ast->nodes[right->binary.left_index].type == NODE_INT ||
@@ -82,6 +93,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                         // 1 +/- (2 +/- X) -> (1 +/- 2) +/- X
                         *node = (struct AstNode) {
                             .type = type == right->type ? NODE_ADD : NODE_SUB,
+                            .code_index = node->code_index,
                             .binary = {
                                 .left_index  = node->binary.left_index,
                                 .right_index = right->binary.right_index,
@@ -90,6 +102,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
 
                         *left = (struct AstNode) {
                             .type = NODE_INT,
+                            .code_index = node->code_index,
                             .value = type == NODE_ADD ?
                                 left->value + ast->nodes[right->binary.left_index].value :
                                 left->value - ast->nodes[right->binary.left_index].value,
@@ -98,6 +111,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                         // 1 +/- (X +/- 2) -> (1 +/- 2) +/- X
                         *node = (struct AstNode) {
                             .type = type,
+                            .code_index = node->code_index,
                             .binary = {
                                 .left_index  = node->binary.left_index,
                                 .right_index = right->binary.left_index,
@@ -106,6 +120,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
 
                         *left = (struct AstNode) {
                             .type = NODE_INT,
+                            .code_index = node->code_index,
                             .value = type == right->type ?
                                 left->value + ast->nodes[right->binary.right_index].value :
                                 left->value - ast->nodes[right->binary.right_index].value,
@@ -122,6 +137,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                         // (X +/- 1) +/- 2 -> X +/- (1 +/- 2)
                         *node = (struct AstNode) {
                             .type = NODE_ADD,
+                            .code_index = node->code_index,
                             .binary = {
                                 .left_index  = left->binary.left_index,
                                 .right_index = node->binary.right_index,
@@ -138,12 +154,14 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
 
                         *right = (struct AstNode) {
                             .type = NODE_INT,
+                            .code_index = node->code_index,
                             .value = value,
                         };
                     } else {
                         // (1 +/- X) +/- 2 -> (1 +/- 2) +/- X
                         *node = (struct AstNode) {
                             .type = left->type,
+                            .code_index = node->code_index,
                             .binary = {
                                 .left_index  = node->binary.right_index,
                                 .right_index = left->binary.right_index,
@@ -157,6 +175,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
 
                         *right = (struct AstNode) {
                             .type = NODE_INT,
+                            .code_index = node->code_index,
                             .value = value,
                         };
                     }
@@ -170,6 +189,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                     *node = (struct AstNode) {
                         .type = type == NODE_ADD ? right->type :
                             right->type == NODE_ADD ? NODE_SUB : NODE_ADD,
+                        .code_index = node->code_index,
                         .binary = {
                             .left_index  = node->binary.right_index,
                             .right_index = right->binary.right_index,
@@ -178,6 +198,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
 
                     *right = (struct AstNode) {
                         .type = type,
+                        .code_index = node->code_index,
                         .binary = {
                             .left_index  = left_index,
                             .right_index = right->binary.left_index,
@@ -200,6 +221,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                         // (1 + X) +/- Y -> (X +/- Y) + 1
                         *node = (struct AstNode) {
                             .type = NODE_ADD,
+                            .code_index = node->code_index,
                             .binary = {
                                 .left_index  = node->binary.left_index,
                                 .right_index = left->binary.left_index,
@@ -208,6 +230,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
 
                         *left = (struct AstNode) {
                             .type = type,
+                            .code_index = node->code_index,
                             .binary = {
                                 .left_index  = left->binary.right_index,
                                 .right_index = right_index,
@@ -217,6 +240,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                         // (X +/- 1) +/- Y -> (X +/- Y) +/- 1
                         *node = (struct AstNode) {
                             .type = left->type,
+                            .code_index = node->code_index,
                             .binary = {
                                 .left_index  = node->binary.left_index,
                                 .right_index = left->binary.right_index,
@@ -225,6 +249,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
 
                         *left = (struct AstNode) {
                             .type = type,
+                            .code_index = node->code_index,
                             .binary = {
                                 .left_index  = left->binary.left_index,
                                 .right_index = right_index,
@@ -235,39 +260,58 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                     node_optimize(ast, node->binary.left_index);
 
                     continue;
+                } else if (type == NODE_SUB && left->type == NODE_VAR && right->type == NODE_VAR && left->arg_index == right->arg_index) {
+                    // X - X -> 0
+                    *node = (struct AstNode) {
+                        .type = NODE_INT,
+                        .code_index = node->code_index,
+                        .value = 0,
+                    };
                 }
                 return;
             }
             case NODE_MUL:
             case NODE_DIV:
             {
+                // TODO: more optimizations like for addition and substraction
                 struct AstNode *left  = &ast->nodes[node->binary.left_index];
                 struct AstNode *right = &ast->nodes[node->binary.right_index];
 
                 if (type == NODE_MUL && left->type == NODE_INT && right->type == NODE_INT) {
                     *node = (struct AstNode) {
                         .type = NODE_INT,
+                        .code_index = node->code_index,
                         .value = left->value * right->value,
                     };
                 } else if (type == NODE_DIV && left->type == NODE_INT && right->type == NODE_INT && right->value != 0) {
                     *node = (struct AstNode) {
                         .type = NODE_INT,
+                        .code_index = node->code_index,
                         .value = left->value / right->value,
                     };
                 } else if (left->type == NODE_INT && left->value == 0) {
                     *node = (struct AstNode) {
                         .type = NODE_INT,
+                        .code_index = node->code_index,
                         .value = 0,
                     };
                 } else if (type == NODE_MUL && right->type == NODE_INT && right->value == 0) {
                     *node = (struct AstNode) {
                         .type = NODE_INT,
+                        .code_index = node->code_index,
                         .value = 0,
                     };
                 } else if (type == NODE_MUL && right->type == NODE_INT && right->value == 1) {
                     *node = *left;
                 } else if (type == NODE_MUL && left->type == NODE_INT && left->value == 1) {
                     *node = *right;
+                } else if (type == NODE_DIV && left->type == NODE_VAR && right->type == NODE_VAR && left->arg_index == right->arg_index) {
+                    // X / X -> 1
+                    *node = (struct AstNode) {
+                        .type = NODE_INT,
+                        .code_index = node->code_index,
+                        .value = 1,
+                    };
                 }
                 return;
             }
@@ -277,6 +321,7 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
                 if (child->type == NODE_INT) {
                     *node = (struct AstNode) {
                         .type = NODE_INT,
+                        .code_index = node->code_index,
                         .value = -child->value,
                     };
                 } else if (child->type == NODE_INV) {
