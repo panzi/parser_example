@@ -93,6 +93,11 @@ int main(int argc, char *argv[]) {
         bytecode_print(bytecode.bytes.data, &argv[1], stdout);
         const long value_bc = bytecode_eval(bytecode.bytes.data, args);
         printf("\nresult = %ld\n", value_bc);
+
+        if (value_ast != value_bc) {
+            fprintf(stderr, "\nError: bytecode code gives a different result!\n");
+            status = 1;
+        }
     }
 
     bytecode_destroy(&bytecode);

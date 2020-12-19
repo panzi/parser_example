@@ -198,7 +198,6 @@ void node_optimize(struct Ast *ast, const size_t node_index) {
 
                     if (ast->nodes[left->binary.left_index].type == NODE_INT) {
                         // (1 + X) +/- Y -> (X +/- Y) + 1
-
                         *node = (struct AstNode) {
                             .type = NODE_ADD,
                             .binary = {
