@@ -20,8 +20,7 @@ IDENT   ::= [_a-zA-Z][_a-zA-Z0-9]*
 COMMENT ::= #.*$
 ```
 
-**TODO:** Better optimizations and x86_64 compiler. Maybe separate exising
-optimizations out of the parser. Maybe write a different faster parser.
+**TODO:** x86_64 compiler and tests. Maybe write a different faster parser.
 
 MIT License
 -----------
