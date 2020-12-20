@@ -71,9 +71,7 @@ long node_eval(const struct Ast *ast, size_t node_index, const long args[]) {
             return node->value;
 
         case NODE_VAR:
-        {
             return args[node->arg_index];
-        }
 
         default:
             assert(false);
