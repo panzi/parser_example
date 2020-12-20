@@ -1,3 +1,4 @@
+#include "ast.h"
 #include "parser.h"
 #include "optimizer.h"
 #include "bytecode.h"
@@ -5,8 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// TODO: more optimizations
-// TODO: compiler
+// TODO: x86_64 compiler
 
 static void usage(int argc, char *argv[]) {
     printf("Usage: %s [parameter-names...] code\n", argc > 0 ? argv[0] : "parser_example");

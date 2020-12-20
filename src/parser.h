@@ -102,6 +102,28 @@ struct Parser {
     struct Ast ast;
 };
 
+#define PARSER_INIT \
+    { \
+        .args = NULL, \
+        .argc = 0, \
+        .state = PARSER_DONE, \
+        .error = ERROR_NONE, \
+        .error_info = { \
+            .code = { \
+                .start_index = 0, \
+                .end_index   = 0, \
+            } \
+        }, \
+        .code = NULL, \
+        .code_size = 0, \
+        .index = 0, \
+        .token = { \
+            .type = TOK_EOF, \
+        }, \
+        .ast = AST_INIT, \
+        .buffer = BUFFER_INIT, \
+    }
+
 struct Location get_location(const char *code, size_t size, size_t index);
 struct Range get_line_range(const char *code, size_t size, size_t index);
 size_t get_line_start(const char *code, size_t size, size_t index);

@@ -16,6 +16,8 @@ struct Bytecode {
     size_t stack_size;
 };
 
+#define BYTECODE_INIT { .bytes = BUFFER_INIT, .stack_size = 0 }
+
 struct Bytecode bytecode_compile(const struct Ast *ast);
 void bytecode_destroy(struct Bytecode *bytecode);
 
