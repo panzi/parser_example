@@ -630,7 +630,21 @@ void parser_destroy(struct Parser *parser) {
     buffer_destroy(&parser->buffer);
 }
 
-const char *get_error_message(enum ParserError error) {
+const char *get_parser_state_name(enum ParserState state) {
+    switch (state)
+    {
+        case PARSER_TOKEN_PENDING: return "token pending";
+        case PARSER_TOKEN_READY:   return "token ready";
+        case PARSER_DONE:          return "done";
+        case PARSER_ERROR:         return "error";
+
+        default:
+            assert(false);
+            return "illegal state code";
+    }
+}
+
+const char *get_parser_error_message(enum ParserError error) {
     switch (error) {
         case ERROR_NONE:                 return "no error";
         case ERROR_ILLEGAL_CHARACTER:    return "illegal character";
@@ -657,7 +671,7 @@ void parser_print_error(const struct Parser *parser, FILE *stream) {
         case ERROR_ILLEGAL_ARG_NAME:
         case ERROR_DUPLICATED_ARG_NAME:
             fprintf(stream, "Error: %s: %s\n",
-                get_error_message(parser->error),
+                get_parser_error_message(parser->error),
                 parser->args[parser->error_info.arg_index]);
             return;
 
@@ -674,7 +688,7 @@ void parser_print_error(const struct Parser *parser, FILE *stream) {
 
     fprintf(stream, "Error in line %zu in column %zu: %s",
         start_loc.lineno, start_loc.column,
-        get_error_message(parser->error));
+        get_parser_error_message(parser->error));
 
     if (parser->error == ERROR_ILLEGAL_TOKEN) {
         fprintf(stream, " %s", get_token_name(parser->token.type));

@@ -134,7 +134,8 @@ struct Parser parse_string(const char *code, char *const *const args, size_t arg
 
 void parser_print_error(const struct Parser *parser, FILE *stream);
 
-const char *get_error_message(enum ParserError error);
+const char *get_parser_state_name(enum ParserState state);
+const char *get_parser_error_message(enum ParserError error);
 const char *get_token_name(enum TokenType token_type);
 
 void parser_destroy(struct Parser *parser);
