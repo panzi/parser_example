@@ -66,10 +66,16 @@ bool test_run(struct TestDecl const* const tests[]) {
 
 // TODO: more tests
 
-TEST_FWD(add);
+EXTERN_TEST(const);
+EXTERN_TEST(var);
+EXTERN_TEST(x_plus_3);
+EXTERN_TEST(many_add_sub);
 
 struct TestDecl const* const tests[] = {
-    TEST_REF(add),
+    TEST_REF(const),
+    TEST_REF(var),
+    TEST_REF(x_plus_3),
+    TEST_REF(many_add_sub),
     NULL
 };
 
